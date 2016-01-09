@@ -34,3 +34,18 @@ definately not gonna work. Memory is one thing but gpu/file system state is anot
     capture code I wrote previously that I need to modify to work for this.
 
     **Next Step**: Set up screen capture loop and queue mechanism to get them to the bot code.
+
+* ####2016-01-09: Queue
+    Started work on the image capture loop and the queue that passes image data from the OS managed
+    background thread to my sdl managed processing thread. This is SO HARD. I really wanted to just
+    use processor atomics and do the queue from scratch. First I went down a weird path that ended
+    up being a dead end trying to have a circular buffer. I do need to revisit that and figure out
+    how to do a proper circular buffer at some point but I went with a simpler design. Now I just
+    have a linked list of frames to process and atomically put things onto both the end of the
+    queue and a freelist that I use to manage the available frame memory. This works pretty well I
+    think. I don't have it displaying on the screen yet so I'm not sure if it really works but I
+    guess that is the next step. I need to do more testing of it and also probably make sure the
+    memory for the pixels is 16 bit aligned so there's no cache sharing and so I can use simd
+    for the compression / pixel swizzling.
+
+    **Next Step**: Pass the real image data and display it. Then maybe work on scaling.
