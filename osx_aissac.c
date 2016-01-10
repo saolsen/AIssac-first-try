@@ -32,8 +32,8 @@ begin_screen_capture(CGDisplayStreamRef *stream,
 
                 /* u32 size = IOSurfaceGetAllocSize(frame); */
                 /* u32 pitch = IOSurfaceGetBytesPerRow(frame); */
-                /* u32 width = IOSurfaceGetWidth(frame); */
-                /* u32 height = IOSurfaceGetHeight(frame); */
+                u32 width = IOSurfaceGetWidth(frame);
+                u32 height = IOSurfaceGetHeight(frame);
                 u8* data = IOSurfaceGetBaseAddress(frame);
 
                 if (data != NULL) {
@@ -56,8 +56,13 @@ begin_screen_capture(CGDisplayStreamRef *stream,
                     }
 
                     INFO("writing to frame");
-                    // Write frame data
+                    // Write frame data                    
                     frame->next_frame = NULL;
+                    frame->frame_width = width;
+                    frame->frame_height = height;
+                    frame->pixel_components = 4;
+
+                    memcpy(frame->data, data, width*height*4);
 
                     OSMemoryBarrier();
 
@@ -199,6 +204,8 @@ main()
 
     frame_queue.is_active = 1;
 
+    int screen_image = -1;
+
     bool running = true;
     while(running) {
         i32 w, h;
@@ -222,10 +229,30 @@ main()
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        nvgBeginFrame(vg, w, h, 1);
+//
+
+        /* nvgBeginPath(vg); */
+        /* nvgRect(vg, 10, 10, 50, 50); */
+        /* nvgStrokeColor(vg, nvgRGBf(1,1,1)); */
+        /* nvgStroke(vg); */
+
         // Aquire Frame
         Frame* frame = frame_queue.head;
         if (frame) {
             // process frame
+
+            // try displaying frame to our window.
+            // @TODO: Should use update image each frame instead of this.
+            if (screen_image == -1) {
+                screen_image = nvgCreateImageRGBA(vg,
+                                                  frame->frame_width,
+                                                  frame->frame_height,
+                                                  0,
+                                                  frame->data);
+            } else {
+                nvgUpdateImage(vg, screen_image, frame->data);
+            }
 
             // free frame
             // @TODO: think about the ABA problem and how it might happen here.
@@ -244,6 +271,15 @@ main()
                 }
             }
         }
+
+        // screen image is 2880x1800
+        nvgBeginPath(vg);
+        nvgRect(vg, 0, 0, 1440, 900);
+        NVGpaint img_paint = nvgImagePattern(vg, 0, 0, 1440, 900, 0, screen_image, 1);
+        nvgFillPaint(vg, img_paint);
+        nvgFill(vg);
+
+        nvgEndFrame(vg);
 
         SDL_GL_SwapWindow(window);
 

@@ -49,3 +49,15 @@ definately not gonna work. Memory is one thing but gpu/file system state is anot
     for the compression / pixel swizzling.
 
     **Next Step**: Pass the real image data and display it. Then maybe work on scaling.
+
+* ####2016-01-10: Capture
+    Got "real time" image capture going. I'm capturing the data in the os thread, passing it through
+    my queue and then displaying it on the screen. It is too slow/laggy to play in real time right
+    now but it's an awesome start. I need to do color correction and compression of the screen so
+    that what comes through are only the "logical" binding of isaac pixels instead of the whole
+    (quite high rez) screen. This is pretty awesome so far though. I might also need to revisit
+    my queue and see if that is the bottleneck, It could be cache line sharing or the linked list
+    traversal slowing things down too, it's hard to say, I need to set up some way to profile it.
+
+    **Next Step**: Color correction and compression.
+    
