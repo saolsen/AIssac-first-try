@@ -24,7 +24,7 @@ definately not gonna work. Memory is one thing but gpu/file system state is anot
 
 ## Requirements
 
-* premake (premake4 for building nanovg @TODO: write own makefile for nanovg)
+* OSX
 * SDL2
 * The Binding of Isaac Rebirth
 
