@@ -2,6 +2,7 @@
 #define _osx_aissic_h
 
 #include <SDL2/SDL.h>
+#include <OpenGL/gl3.h>
 
 #include <unistd.h>
 #include <dispatch/dispatch.h>
@@ -9,7 +10,12 @@
 #include <IOSurface/IOSurface.h>
 #include <libkern/OSAtomic.h>
 
-#include "aissac_platform.h"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-pragmas"
+#include "imgui.h"
+#include "imgui_draw.cpp"
+#include "imgui.cpp"
+#pragma clang diagnostic pop
 
 typedef struct frame {
     struct frame *next_frame;

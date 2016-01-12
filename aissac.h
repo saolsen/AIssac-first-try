@@ -1,6 +1,3 @@
-/*
-
-*/
 #ifndef _aissac_h
 #define _aissac_h
 

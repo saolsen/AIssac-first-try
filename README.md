@@ -60,4 +60,15 @@ definately not gonna work. Memory is one thing but gpu/file system state is anot
     traversal slowing things down too, it's hard to say, I need to set up some way to profile it.
 
     **Next Step**: Color correction and compression.
-    
+
+* ####2016-01-11: Imgui
+    Well I got a bit bogged down by nanovg and I realised it was going to be a lot easier to
+    set up any debug UI I want if I just use ImGui. I started down a few paths to get it running.
+    First I tried cimgui but couldn't figure it out, then I tried just having the gui code in cpp
+    and the rest still in c but ultimately since I had to use a cpp linker anyway I just ported
+    the whole project over to cpp. I'll probably still write this almost completely in a c style
+    but it's now all cpp. I did some work to get ImGui up and running too and I'm very happy with
+    it. Now I need to get the image drawing again and go back to working on cropping, color
+    corections and compression.
+
+    **Next Step**: Draw image, color correction and compression.

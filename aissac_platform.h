@@ -17,8 +17,6 @@
 #include <assert.h>
 #include <math.h>
 
-#include "nanovg.h"
-
 // Set up some type aliases I like.
 
 typedef int32_t  i32;
