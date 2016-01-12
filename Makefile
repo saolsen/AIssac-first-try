@@ -1,4 +1,4 @@
-CXXFLAGS= -std=c++11 -Wall -Iimgui `pkg-config --cflags sdl2`
+CXXFLAGS= -std=c++11 -g -Wall -Iimgui `pkg-config --cflags sdl2`
 
 all: aissac
 

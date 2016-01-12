@@ -19,18 +19,20 @@
 
 typedef struct frame {
     struct frame *next_frame;
-    volatile i32 is_ready_for_processing;
 
-    i32 frame_width;
-    i32 frame_height;
+    i32 width;
+    i32 height;
     i32 pixel_components;
+
+    u64 time_recorded;
+    
     u8 *data;
 } Frame;
 
 typedef struct {
-    i32 is_active;
-    
     Frame *head;
+
+    i32 allocated_size;
 
     Frame *free_frames_list;
     Frame *frames_storage;

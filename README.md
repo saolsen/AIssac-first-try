@@ -72,3 +72,24 @@ definately not gonna work. Memory is one thing but gpu/file system state is anot
     corections and compression.
 
     **Next Step**: Draw image, color correction and compression.
+
+* ####2016-01-12: Compression
+    ![Image of 2016-01-12 results.](https://dl.dropbox.com/s/udvj73mqloj8369/Screenshot%202016-01-12%2017.14.29.png)
+
+    I got the image drawing again using an opengl texture. I then cleaned some stuff up and set it
+    up to compress the image. The native resolution of my laptop screen, which I am capturing from
+    is 2880x1800. Copying this image to memory (and again to a texture) is very expensive. Just
+    getting it to draw on the screen was eating away at my ability to run at 60fps. I have done
+    no image processing of it yet either so things would only get worse. Lucky for me binding of
+    isaac is a game that uses pixel art. That means I can compress this image so that I have 1
+    actual pixel for every "logical" pixel in the art. From some experimenting it turned out to be
+    7 actual pixels per art pixel at this resolution so I can compress the screen image down to
+    441 x 257 without any loss of information! This now runs fast enough that I can look at my
+    debug screen instead of the actual screen and play the game just fine. This small image will
+    be a lot better for image processing too.
+    The compressed image is a bit worse in that animations aren't as smooth because you loose
+    subpixel rendering since we're just sampling every 7 pixels. I don't think that's going to be
+    a problem for image processing code though.
+    I also did the r<->b color correction so the pixels are in rgba format.
+
+    **Next Step**: Start trying to make sense of the image.

@@ -11,11 +11,144 @@
 
 #include "imgui_impl_sdl_gl3.cpp"
 
+// Frame Queue
+FrameQueue*
+frame_queue_alloc(i32 display_width, i32 display_height, i32 compression_factor, i32 compression_offset)
+{
+    FrameQueue* frame_queue = (FrameQueue*)malloc(sizeof(FrameQueue));
+
+    u32 num_allocated_frames = 5; // @TODO: Think about this.
+    frame_queue->free_frames_list = NULL;
+    frame_queue->frames_storage = (Frame*)calloc(1, sizeof(Frame) * num_allocated_frames);
+    u32 bytes_per_frame = ((display_width * display_height) / compression_factor) * 4;
+    // @TODO: Align to cache line boundry.
+    frame_queue->frames_data_storage = (u8*)calloc(1, bytes_per_frame * num_allocated_frames);
+
+    Frame *last_frame = NULL;
+    for (u32 frame_index = 0; frame_index < num_allocated_frames; frame_index++) {
+        Frame *frame = frame_queue->frames_storage + frame_index;
+        frame->next_frame = last_frame;
+        frame->width = display_width / compression_factor;
+        frame->height = display_height / compression_factor;
+        frame->pixel_components = 4;
+        frame->data = frame_queue->frames_data_storage + (frame_index * bytes_per_frame);
+
+        last_frame = frame;
+    }
+
+    frame_queue->free_frames_list = last_frame;
+    frame_queue->head = NULL;
+
+    OSMemoryBarrier();
+    
+    return frame_queue;
+}
+
+void
+frame_queue_free(FrameQueue *frame_queue)
+{
+    free(frame_queue->frames_storage);
+    free(frame_queue->frames_data_storage);
+    free(frame_queue);
+}
+
+// Aquire a new frame to write to.
+Frame*
+frame_queue_aquire_frame(FrameQueue *frame_queue)
+{
+    Frame* frame = NULL;
+
+    while (!frame) {
+        Frame *try_frame = frame_queue->free_frames_list;
+        if (!try_frame) {
+            ERROR("No free frames to write to!");
+            break;
+        }
+
+        if (OSAtomicCompareAndSwapPtrBarrier((void*)try_frame,
+                                             (void*)try_frame->next_frame,
+                                             (void*volatile*)&frame_queue->free_frames_list)) {
+            frame = try_frame;
+        }
+    }
+
+    return frame;
+}
+
+void
+frame_queue_publish(FrameQueue *frame_queue, Frame* frame)
+{
+    frame->next_frame = NULL;
+    
+    OSMemoryBarrier();
+
+    bool published = false;
+    while (!published) {
+        Frame **tail = &(frame_queue->head);
+
+        while(*tail != NULL) {
+            tail = &((*tail)->next_frame);
+        }
+
+        // Try to add our frame to the end
+        if (OSAtomicCompareAndSwapPtrBarrier((void*)NULL,
+                                             (void*)frame,
+                                             (void*volatile*)tail)) {
+            published = true;
+        }
+    }
+}
+
+Frame*
+frame_queue_get_head(FrameQueue *frame_queue)
+{
+    Frame* frame = frame_queue->head;
+    return frame;
+}
+
+void
+frame_queue_free_frame(FrameQueue *frame_queue, Frame* frame)
+{
+    // @TODO: think about the ABA problem and how it might happen here.
+    frame_queue->head = frame->next_frame;
+
+    for (;;) {
+        Frame* old_free_head = frame_queue->free_frames_list;
+        frame->next_frame = old_free_head;
+            
+        frame->next_frame = old_free_head;
+        if (OSAtomicCompareAndSwapPtrBarrier((void*)old_free_head,
+                                             (void*)frame,
+                                             (void*volatile*)&frame_queue->free_frames_list)) {
+            // frame appended to freelist
+            break;
+        }
+    }
+}
+
 // Screen Capture
 void
-begin_screen_capture(CGDisplayStreamRef *stream,
+get_capture_screen_size(i32 *display_width, i32 *display_height)
+{
+    CGDirectDisplayID display_id = 0;
+
+    CGDisplayModeRef mode = CGDisplayCopyDisplayMode(display_id);
+
+    *display_width = CGDisplayModeGetPixelWidth(mode);
+    *display_height = CGDisplayModeGetPixelHeight(mode);
+}
+
+void
+screen_capture_stop(CGDisplayStreamRef *stream)
+{
+    CGDisplayStreamStop(*stream);
+}
+
+void
+screen_capture_begin(CGDisplayStreamRef *stream,
                      FrameQueue *frame_queue,
-                     i32 *capture_width, i32 *capture_height)
+                     // i32 *capture_width, i32 *capture_height,
+                     i32 compression_factor, i32 compression_offset)
 {
     void(^handler)(CGDisplayStreamFrameStatus,
                    u64,
@@ -25,68 +158,55 @@ begin_screen_capture(CGDisplayStreamRef *stream,
                                                      IOSurfaceRef frame,
                                                      CGDisplayStreamUpdateRef update)
     {
-        if (frame_queue->is_active) {
-            if (status == kCGDisplayStreamFrameStatusFrameComplete &&
-                frame != NULL) {
-                IOSurfaceLock(frame, kIOSurfaceLockReadOnly, NULL);
+        if (status == kCGDisplayStreamFrameStatusFrameComplete &&
+            frame != NULL) {
+            IOSurfaceLock(frame, kIOSurfaceLockReadOnly, NULL);
 
-                /* u32 size = IOSurfaceGetAllocSize(frame); */
-                /* u32 pitch = IOSurfaceGetBytesPerRow(frame); */
-                u32 width = IOSurfaceGetWidth(frame);
-                u32 height = IOSurfaceGetHeight(frame);
-                u8* data = (u8*)IOSurfaceGetBaseAddress(frame);
+            /* u32 size = IOSurfaceGetAllocSize(frame); */
+            /* u32 pitch = IOSurfaceGetBytesPerRow(frame); */
+            u32 width = IOSurfaceGetWidth(frame);
+            u32 height = IOSurfaceGetHeight(frame);
+            u8* data = (u8*)IOSurfaceGetBaseAddress(frame);
 
-                if (data != NULL) {
-                    // INFO("Captured Image that is %ix%i", width, height);
+            u32 compressed_width = width / compression_factor;
+            u32 compressed_height = height / compression_factor;
 
-                    Frame* frame = NULL;
-                    while (!frame) {
-                        Frame *try_frame = frame_queue->free_frames_list;
-                        if (!try_frame) {
-                            ERROR("No free frames to write to!");
-                            continue;
-                        }
+            if (data != NULL) {
 
-                        if (OSAtomicCompareAndSwapPtrBarrier((void*)try_frame,
-                                                             (void*)try_frame->next_frame,
-                                                             (void*volatile*)&frame_queue->free_frames_list)) {
-                            INFO("Aquired Frame");
-                            frame = try_frame;
-                        }
-                    }
-
-                    INFO("writing to frame");
-                    // Write frame data                    
+                Frame *frame = frame_queue_aquire_frame(frame_queue);
+                if (frame) {
+                    // Write frame data
                     frame->next_frame = NULL;
-                    frame->frame_width = width;
-                    frame->frame_height = height;
+                    frame->width = compressed_width;
+                    frame->height = compressed_height;
                     frame->pixel_components = 4;
+                    
+                    for (u32 pixel_y = 0;
+                         pixel_y < compressed_height;
+                         pixel_y++) {
+                        for (u32 pixel_x = 0;
+                             pixel_x < compressed_width;
+                             pixel_x++) {
+                            i32 data_index = pixel_y * compression_factor *
+                                (4 * width) +
+                                pixel_x * compression_factor * 4;
+                            i32 compressed_index = pixel_y *
+                                (4 * compressed_width) +
+                                pixel_x * 4;
 
-                    memcpy(frame->data, data, width*height*4);
-
-                    OSMemoryBarrier();
-
-                    INFO("publishing frame");
-                    // Publish frame
-                    // @TODO: Use a tail so you don't walk the whole list each time.
-                    bool published = false;
-                    while (!published) {
-                        Frame **tail = &(frame_queue->head);
-
-                        while(*tail != NULL) {
-                            tail = &((*tail)->next_frame);
-                        }
-
-                        // Try to add our frame to the end
-                        if (OSAtomicCompareAndSwapPtrBarrier((void*)NULL,
-                                                             (void*)frame,
-                                                             (void*volatile*)tail)) {
-                            published = true;
+                            // Swizzle r and b so we get rgba
+                            frame->data[compressed_index] = data[data_index+2];
+                            frame->data[compressed_index+1] = data[data_index+1];
+                            frame->data[compressed_index+2] = data[data_index];
+                            frame->data[compressed_index+3] = data[data_index+3];
                         }
                     }
+
+                    frame_queue_publish(frame_queue, frame);
                 }
-                IOSurfaceUnlock(frame, kIOSurfaceLockReadOnly, NULL);
             }
+                
+            IOSurfaceUnlock(frame, kIOSurfaceLockReadOnly, NULL);
         }
     };
 
@@ -100,10 +220,6 @@ begin_screen_capture(CGDisplayStreamRef *stream,
     u32 pixel_width = CGDisplayModeGetPixelWidth(mode);
     u32 pixel_height = CGDisplayModeGetPixelHeight(mode);
 
-    INFO("Screen should be %ix%i", pixel_width, pixel_height);
-    *capture_width = pixel_width;
-    *capture_height = pixel_height;
-
     CGDisplayModeRelease(mode);
 
     *stream = CGDisplayStreamCreateWithDispatchQueue(display_id,
@@ -116,13 +232,7 @@ begin_screen_capture(CGDisplayStreamRef *stream,
     CGDisplayStreamStart(*stream);
 }
 
-void
-stop_screen_capture(CGDisplayStreamRef *stream)
-{
-    CGDisplayStreamStop(*stream);
-}
-
-// @TODO: Can load this dynamically for livecoding AI. Fun stuff!
+// @TODO: Should load this dynamically for livecoding AI. Fun stuff!
 #include "aissac.cpp"
 
 i32
@@ -171,55 +281,45 @@ main()
     ImGui_ImplSdlGL3_Init(window);
     // @TODO: Maybe load more fonts for imgui.
 
-
+    i32 capture_display_width, capture_display_height;
+    get_capture_screen_size(&capture_display_width, &capture_display_height);
 
     // Setup screen capture.
-    FrameQueue frame_queue;
-    frame_queue.is_active = 0;
+    // I believe compression is going to be 7 for isaac.
+    int compression_factor = 7; // 7;
+    int compression_offset = 1;
+
+    int last_compression_factor = -1;
+    int last_compression_offset = -1;
+
+    // Texture for displaying capture image.
+    GLuint capture_texture;
+    glGenTextures(1, &capture_texture);
+    glBindTexture(GL_TEXTURE_2D, capture_texture);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, capture_display_width/7, capture_display_height/7, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
     
-    CGDisplayStreamRef stream;
-    i32 capture_width, capture_height;
-    begin_screen_capture(&stream, &frame_queue, &capture_width, &capture_height);
+    // @TODO: See if there's something better than this, this looks awful when scaled.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
-    u32 num_allocated_frames = 5;
-    frame_queue.free_frames_list = NULL;
-    frame_queue.frames_storage = (Frame*)calloc(1, sizeof(Frame) * num_allocated_frames);
-    u32 bytes_per_frame = capture_width * capture_height * 4;
-    // @TODO: Align to cache line boundry.
-    frame_queue.frames_data_storage = (u8*)calloc(1, bytes_per_frame * num_allocated_frames);
+    FrameQueue* frame_queue = NULL;
+    CGDisplayStreamRef screen_capture = NULL;
 
-    Frame *last_frame = NULL;
-    for (u32 frame_index = 0; frame_index < num_allocated_frames; frame_index++) {
-        Frame *frame = frame_queue.frames_storage + frame_index;
-        frame->next_frame = last_frame;
-        frame->is_ready_for_processing = 0;
-        frame->frame_width = capture_width;
-        frame->frame_height = capture_height;
-        frame->pixel_components = 4;
-        frame->data = frame_queue.frames_data_storage + (frame_index * bytes_per_frame);
+    Frame* frame = NULL;
+    i32 frame_width = 1;
+    i32 frame_height = 1;
 
-        last_frame = frame;
-    }
-
-    frame_queue.free_frames_list = last_frame;
-
-    frame_queue.head = NULL;
-
-    OSMemoryBarrier();
-
-    frame_queue.is_active = 1;
-
-    int screen_image = -1;
-
-    // IMGUI test state
-    bool show_test_window = true;
-    bool show_another_window = false;
-    ImVec4 clear_color = ImColor(114, 144, 154);
+    // Data for communicating with the AI code.
+    bool screen_updated = false;
+    i32 screen_width = 1;
+    i32 screen_height = 1;
+    u8* screen_data = NULL;
 
     bool running = true;
-    while(running) {
+    while (running) {
         i32 w, h;
-	SDL_GetWindowSize(window, &w, &h);
+	    SDL_GetWindowSize(window, &w, &h);
 
         i32 draw_w, draw_h;
         SDL_GL_GetDrawableSize(window, &draw_w, &draw_h);
@@ -241,51 +341,95 @@ main()
         // New IMGUI Frame.
         ImGui_ImplSdlGL3_NewFrame();
 
-        // Aquire Frame
-        Frame* frame = frame_queue.head;
-        if (frame) {
-            // process frame
-
-            // try displaying frame to our window.
-            // @TODO: Should use update image each frame instead of this.
-            if (screen_image == -1) {
-                /* screen_image = nvgCreateImageRGBA(vg, */
-                /*                                   frame->frame_width, */
-                /*                                   frame->frame_height, */
-                /*                                   0, */
-                /*                                   frame->data); */
-            } else {
-                /* nvgUpdateImage(vg, screen_image, frame->data); */
-            }
-
-            // free frame
-            // @TODO: think about the ABA problem and how it might happen here.
-            frame_queue.head = frame->next_frame;
-
-            bool freed = false;
-            while(!freed) {
-                Frame* old_free_head = frame_queue.free_frames_list;
-                frame->next_frame = old_free_head;
+        // Set Up display capture.
+        if (compression_factor != last_compression_factor ||
+            compression_offset != last_compression_offset) {
             
-                frame->next_frame = old_free_head;
-                if (OSAtomicCompareAndSwapPtrBarrier((void*)old_free_head,
-                                                     (void*)frame,
-                                                     (void*volatile*)&frame_queue.free_frames_list)) {
-                    freed = true;
-                }
+            // Stop old screen capture.
+            if (screen_capture) {
+                screen_capture_stop(&screen_capture);
+                screen_capture = NULL;
             }
+            
+            // Create new FrameQueue.
+            if (frame_queue) {
+                frame_queue_free(frame_queue);
+                frame_queue = NULL;
+            }
+
+            frame_queue = frame_queue_alloc(capture_display_width, capture_display_height,
+                                            compression_factor, compression_offset);
+            screen_capture_begin(&screen_capture, frame_queue, compression_factor, compression_offset);
+                
+            last_compression_factor = compression_factor;
+            last_compression_offset = compression_offset;
         }
 
-        // @TODO: Do everything here. For the AI.
-        // begin test UI
+        // Pull Frame
+        bool new_frame = false;
+        frame = frame_queue_get_head(frame_queue);
+        if (frame) {
+            new_frame = true;
+            frame_width = frame->width;
+            frame_height = frame->height;
+
+            // Update texture.
+            glBindTexture(GL_TEXTURE_2D, capture_texture);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, frame_width, frame_height,
+                            GL_RGBA, GL_UNSIGNED_BYTE, frame->data);
+
+            // Copy out frame data for processing.
+            if (frame_width != screen_width || frame_height != screen_height) {
+                screen_width = frame_width;
+                screen_height = frame_height;
+
+                if (screen_data) {
+                    free(screen_data);
+                }
+
+                screen_data = (u8*)malloc(4 * screen_width * screen_height);
+            }
+            screen_updated = true;
+            memcpy(screen_data, frame->data, 4 * screen_width * screen_height);
+
+            // free frame
+            frame_queue_free_frame(frame_queue, frame);
+
+            frame = NULL;
+        }
+
+        // Process screen.
+
+        // Platform UI.
+                // Platform debug info.
         {
-            static float f = 0.0f;
-            ImGui::Text("Hello, world!");
-            ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
-            ImGui::ColorEdit3("clear color", (float*)&clear_color);
-            if (ImGui::Button("Test Window")) show_test_window ^= 1;
-            if (ImGui::Button("Another Window")) show_another_window ^= 1;
-            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::Begin("Platform");
+            ImGui::Text("Performance %.3f ms/frame (%.1f FPS)",
+                        1000.0f / ImGui::GetIO().Framerate,
+                        ImGui::GetIO().Framerate);
+            ImGui::Text("Frame Capture Size (%i x %i)", screen_width, screen_height);
+            ImGui::End();
+        }
+        
+        // Screen Management
+        {
+            ImGui::Begin("Screen");
+            ImGui::Text("Compress Image to be 1 pixel per logical pixel.");
+            ImGui::Text("Screen Resolution: (%i x %i)",
+                        capture_display_width, capture_display_height);
+            ImGui::Text("Captured Resolution: (%i x %i)", screen_width, screen_height);
+            ImGui::End();
+        }
+
+        // Scene view.
+        {
+            ImGui::Begin("Screen Capture");
+
+            if (screen_data) {
+                ImVec2 window_size = ImGui::GetWindowContentRegionMax();
+                ImGui::Image((void *)capture_texture, window_size);
+            }
+            ImGui::End();
         }
         // end test UI
 
@@ -294,11 +438,19 @@ main()
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui::Render();
 
-        SDL_GL_SwapWindow(window);
+        // If compression_factor != last_compression_factor
+        // generate a new queue.
 
+        SDL_GL_SwapWindow(window);
     }
 
     INFO("Shutting Down");
+
+    screen_capture_stop(&screen_capture);
+    frame_queue_free(frame_queue);
+
+    free(screen_data);
+
     SDL_GL_DeleteContext(context);
     SDL_DestroyWindow(window);
     SDL_Quit();
