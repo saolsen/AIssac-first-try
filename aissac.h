@@ -3,4 +3,9 @@
 
 #include "aissac_platform.h"
 
+struct AIState {
+    bool is_initialized;
+    i32 wudup_tho;
+};
+
 #endif

@@ -92,4 +92,12 @@ definately not gonna work. Memory is one thing but gpu/file system state is anot
     a problem for image processing code though.
     I also did the r<->b color correction so the pixels are in rgba format.
 
+    **Next Step**: Finish the platform AI interface.
+
+* ####2016-01-12: Interface
+    I did a little more work today to make sure the platform/AI interface is good. I set up live reloading of the AI layer
+    so you can update and recompile AI code on the fly and it updates in the app. I also set up having the platform allocate
+    a block of memory for the AI to use so things don't go away when you reload it. I then verified that the AI code can draw
+    UI to the screen so I think I have just about all I need to start writing an AI. This is gonna be the hard part...
+
     **Next Step**: Start trying to make sense of the image.

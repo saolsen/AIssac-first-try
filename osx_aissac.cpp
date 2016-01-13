@@ -4,12 +4,62 @@
   * Debug output is displayed using SDL, OpenGL and nanovg.
   * Screen capture is done using osx CoreGraphics and IOSurface apis.
   * Game input is done using osx CoreFoundation apis.
-  * @TODO: Process snapshotting/checkpointing (for livecoding) is done using TBD.
+  * @TODO: Process snapshotting/checkpoining (for livecoding) is done using TBD.
+
+  Probably want to visualize more of what is going on here such as how big the image queue is,
+  and how much latency between capture time and process time. Probably want to build a profiler.
  */
 #include "aissac_platform.h"
 #include "osx_aissac.h"
 
 #include "imgui_impl_sdl_gl3.cpp"
+
+// Library Reloading
+bool
+lib_reload(CurrentLib *current_lib)
+{
+    bool lib_reloaded = false;
+    const char* library = "libaissac.dylib";
+    
+    struct stat attr;
+    if ((stat(library, &attr) == 0) && (current_lib->id != attr.st_ino)) {
+        INFO("New Library to load.");
+        
+        if (current_lib->handle) {
+            dlclose(current_lib->handle);
+        }
+        
+        void* handle = dlopen(library, RTLD_NOW);
+
+        if (handle) {
+            current_lib->handle = handle;
+            current_lib->id = attr.st_ino;
+
+            // game_update_and_render* game = (game_update_and_render*)dlsym(handle,
+            //                                                               "update_and_render");
+            AI* ai = (AI*)dlsym(handle, "aissac");
+            
+            if (ai != NULL) {
+                current_lib->ai = *ai;
+                INFO("Reloaded Game Library");
+                lib_reloaded = true;
+                
+            } else {
+                ERROR("Error loading api symbol.");
+                dlclose(handle);
+                current_lib->handle = NULL;
+                current_lib->id = 0;
+            }
+            
+        } else {
+            ERROR("Error loading game library.");
+            current_lib->handle = NULL;
+            current_lib->id = 0;
+        }
+    }
+
+    return lib_reloaded;
+}
 
 // Frame Queue
 FrameQueue*
@@ -232,12 +282,23 @@ screen_capture_begin(CGDisplayStreamRef *stream,
     CGDisplayStreamStart(*stream);
 }
 
-// @TODO: Should load this dynamically for livecoding AI. Fun stuff!
-#include "aissac.cpp"
-
 i32
 main()
-{   
+{
+    // Get Library
+    CurrentLib ai_lib = {.handle = NULL,
+                         .id = 0,
+                         .ai = {0}};
+    lib_reload(&ai_lib);
+
+    // Setup AI memory.
+    Memory ai_memory;
+    ai_memory.persistent_storage_size = ai_lib.ai.memory_needed;
+    ai_memory.persistent_storage = (u8*)calloc(1, ai_lib.ai.memory_needed);
+    ai_memory.executable_reloaded = true;
+    // @TODO: Make this real when we have some platform stuff we need to call.
+    ai_memory.platform_api = {.nah = 1};
+    
     // Setup SDL
     if(SDL_Init(SDL_INIT_VIDEO)) {
         ERROR("Error initializing SDL: %s", SDL_GetError());
@@ -286,14 +347,14 @@ main()
 
     // Setup screen capture.
     // I believe compression is going to be 7 for isaac.
-    int compression_factor = 7; // 7;
-    int compression_offset = 1;
+    i32 compression_factor = 7; // 7;
+    i32 compression_offset = 1;
 
-    int last_compression_factor = -1;
-    int last_compression_offset = -1;
+    i32 last_compression_factor = -1;
+    i32 last_compression_offset = -1;
 
     // Texture for displaying capture image.
-    GLuint capture_texture;
+    u32 capture_texture;
     glGenTextures(1, &capture_texture);
     glBindTexture(GL_TEXTURE_2D, capture_texture);
 
@@ -318,8 +379,10 @@ main()
 
     bool running = true;
     while (running) {
+        ai_memory.executable_reloaded = lib_reload(&ai_lib);
+        
         i32 w, h;
-	    SDL_GetWindowSize(window, &w, &h);
+        SDL_GetWindowSize(window, &w, &h);
 
         i32 draw_w, draw_h;
         SDL_GL_GetDrawableSize(window, &draw_w, &draw_h);
@@ -397,8 +460,15 @@ main()
 
             frame = NULL;
         }
-
+        
         // Process screen.
+        GameState state;
+        state.screen_width = screen_width;
+        state.screen_height = screen_height;
+        state.screen_data = screen_data;
+
+        GameInput input = ai_lib.ai.process_frame(&ai_memory, state);
+        INFO("%i", input.a);
 
         // Platform UI.
                 // Platform debug info.
@@ -427,14 +497,15 @@ main()
 
             if (screen_data) {
                 ImVec2 window_size = ImGui::GetWindowContentRegionMax();
-                ImGui::Image((void *)capture_texture, window_size);
+                u64 texture_loc = capture_texture;
+                ImGui::Image((void*)texture_loc, window_size);
             }
             ImGui::End();
         }
         // end test UI
 
         // Render
-        glViewport(0, 0, (int)ImGui::GetIO().DisplaySize.x, (int)ImGui::GetIO().DisplaySize.y);
+        glViewport(0, 0, (i32)ImGui::GetIO().DisplaySize.x, (i32)ImGui::GetIO().DisplaySize.y);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui::Render();
 

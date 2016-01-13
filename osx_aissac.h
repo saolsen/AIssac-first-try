@@ -9,13 +9,21 @@
 #include <CoreGraphics/CoreGraphics.h>
 #include <IOSurface/IOSurface.h>
 #include <libkern/OSAtomic.h>
+#include <sys/stat.h>
+#include <dlfcn.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunknown-pragmas"
-#include "imgui.h"
+
 #include "imgui_draw.cpp"
 #include "imgui.cpp"
 #pragma clang diagnostic pop
+
+struct CurrentLib {
+    void *handle;
+    ino_t id;
+    AI ai;
+};
 
 typedef struct frame {
     struct frame *next_frame;
