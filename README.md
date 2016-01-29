@@ -1,6 +1,8 @@
 # AIssac
 A program that plays the binding of Isaac.
 
+Aissac must be run like this in dev `bin/aissac`
+
 ## Goal
 To write a program (AI?) that can play the binding of isaac. I would like it to be a "non cheating"
 AI which I'll define as having to interact with the game the same way a player would. It's input
@@ -51,13 +53,14 @@ definately not gonna work. Memory is one thing but gpu/file system state is anot
     **Next Step**: Pass the real image data and display it. Then maybe work on scaling.
 
 * ####2016-01-10: Capture
-    Got "real time" image capture going. I'm capturing the data in the os thread, passing it through
-    my queue and then displaying it on the screen. It is too slow/laggy to play in real time right
-    now but it's an awesome start. I need to do color correction and compression of the screen so
-    that what comes through are only the "logical" binding of isaac pixels instead of the whole
-    (quite high rez) screen. This is pretty awesome so far though. I might also need to revisit
-    my queue and see if that is the bottleneck, It could be cache line sharing or the linked list
-    traversal slowing things down too, it's hard to say, I need to set up some way to profile it.
+    Got "real time" image capture going. I'm capturing the data in the os thread, passing it
+    through my queue and then displaying it on the screen. It is too slow/laggy to play in real
+    time right now but it's an awesome start. I need to do color correction and compression of
+    the screen so that what comes through are only the "logical" binding of isaac pixels instead
+    of the whole (quite high rez) screen. This is pretty awesome so far though. I might also need
+    to revisit my queue and see if that is the bottleneck, It could be cache line sharing or the
+    linked list traversal slowing things down too, it's hard to say, I need to set up some way to
+    profile it.
 
     **Next Step**: Color correction and compression.
 
@@ -95,9 +98,12 @@ definately not gonna work. Memory is one thing but gpu/file system state is anot
     **Next Step**: Finish the platform AI interface.
 
 * ####2016-01-12: Interface
-    I did a little more work today to make sure the platform/AI interface is good. I set up live reloading of the AI layer
-    so you can update and recompile AI code on the fly and it updates in the app. I also set up having the platform allocate
-    a block of memory for the AI to use so things don't go away when you reload it. I then verified that the AI code can draw
-    UI to the screen so I think I have just about all I need to start writing an AI. This is gonna be the hard part...
+    I did a little more work today to make sure the platform/AI interface is good. I set up live
+    reloading of the AI layer so you can update and recompile AI code on the fly and it updates in
+    the app. I also set up having the platform allocate a block of memory for the AI to use so
+    things don't go away when you reload it. I then verified that the AI code can draw UI to the
+    screen so I think I have just about all I need to start writing an AI. This is gonna be the
+    hard part...
 
     **Next Step**: Start trying to make sense of the image.
+

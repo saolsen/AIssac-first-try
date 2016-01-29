@@ -19,7 +19,7 @@ bool
 lib_reload(CurrentLib *current_lib)
 {
     bool lib_reloaded = false;
-    const char* library = "libaissac.dylib";
+    const char* library = "bin/libaissac.dylib";
     
     struct stat attr;
     if ((stat(library, &attr) == 0) && (current_lib->id != attr.st_ino)) {
@@ -468,10 +468,9 @@ main()
         state.screen_data = screen_data;
 
         GameInput input = ai_lib.ai.process_frame(&ai_memory, state);
-        INFO("%i", input.a);
 
         // Platform UI.
-                // Platform debug info.
+        // Platform debug info.
         {
             ImGui::Begin("Platform");
             ImGui::Text("Performance %.3f ms/frame (%.1f FPS)",

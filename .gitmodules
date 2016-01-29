@@ -2,5 +2,5 @@
 	path = nanovg
 	url = git@github.com:memononen/nanovg.git
 [submodule "imgui"]
-	path = imgui
+	path = lib/imgui
 	url = https://github.com/ocornut/imgui

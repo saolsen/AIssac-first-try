@@ -4,7 +4,6 @@ GameInput process_frame(Memory *memory, GameState gamestate)
 {
     AIState* state = (AIState*)memory->persistent_storage;
     if (!state->is_initialized) {
-
         state->is_initialized = true;
     }
     state->wudup_tho++;
