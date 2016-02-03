@@ -107,3 +107,29 @@ definately not gonna work. Memory is one thing but gpu/file system state is anot
 
     **Next Step**: Start trying to make sense of the image.
 
+* ####2016-01-28: Data Collection
+    I want to get a collection of sprite data that I can use to figure out the image detection
+    algorithms I need to know what's going on in a frame. The best source of that data is the
+    asset files of the game itself. They are encrypted it seems but it looks like in the boi
+    modding community they have a program to dump them. It's a csharp project sadly so I'm
+    spending a whole bunch of time trying to get mono installed and hoping this is gonna work.
+    After this I'm going to try and compress the images to 1 pixel per pixel so they match my
+    screen data (though there are definately scaled up and down versions of sprites in the game
+    so I will have to account for that).
+
+    **Next Step**: Continue trying to get sprite data.
+
+* ####2016-01-31: Computer Vision
+    I'm diving pretty heavily into computer vision for a bit to figure out how it works and then
+    come back to this. I think there won't be any code here for a few weeks while I figure out
+    wtf I'm doing wrt computer vision. I hope to come back and be able to model my problem and
+    come up with something that works for the image processing portion of AIssac.
+
+    **Next Step**: Keep studying
+
+* ####2016-01-31: More Computer Vision
+    I've still been studying. Starting to understand how this stuff works, what sorts of models
+    apply to what problems, etc. Still gonna take some time before I figure out what the right
+    approach for this AIssac inference is going to be.
+
+    **Next Step**: Keep studying
